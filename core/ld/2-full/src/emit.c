@@ -29,6 +29,9 @@ char* emit_current_symbol;
 int emit_line;
 static int bytes_emitted;
 
+static char output_buffer[4096];
+static size_t output_buffer_pos;
+
 void emit_byte_count(void) {
     if (bytes_emitted == 0) {
         return;
@@ -41,10 +44,13 @@ void emit_byte_count(void) {
 
 void emit_init(void) {
     emit_line = 1;
+    output_buffer_pos = 0;
 }
 
 void emit_destroy(void) {
     emit_byte_count();
+    if (output_buffer_pos > 0)
+        fwrite(output_buffer, output_buffer_pos, 1, output_file);
     free(emit_filename);
     free(emit_current_symbol);
 }
@@ -52,7 +58,12 @@ void emit_destroy(void) {
 void emit_byte(char c) {
     //printf("emit byte '%x pass %i\n", c, pass);
     if (pass == 3) {
-        fputc(c, output_file);
+        output_buffer[output_buffer_pos] = c;
+        output_buffer_pos++;
+        if (output_buffer_pos >= sizeof(output_buffer)) {
+            output_buffer_pos = 0;
+            fwrite(output_buffer, sizeof(output_buffer), 1, output_file);
+        }
         ++bytes_emitted;
     }
 }

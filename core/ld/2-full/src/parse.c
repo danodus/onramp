@@ -29,6 +29,9 @@
 #include "label.h"
 #include "symbol.h"
 
+static char* file_buffer;
+static fpos_t file_buffer_pos;
+
 /** Starts a new file, either a real file or a file in a static archive. */
 static void start_file(const char* new_filename) {
     ++file_index;
@@ -40,16 +43,14 @@ static void start_file(const char* new_filename) {
 
 static void save_file_state(void) {
     // We store the state of all these things so we can restore them later.
-    if (0 != fgetpos(input_file, &file_start_pos))
-        fatal("Failed to seek input file.");
+    file_start_pos = file_buffer_pos;
     file_start_address = current_address;
     file_first_char = current_char;
 }
 
 /** Restarts a file for another parsing pass. */
 static void restore_file_state(void) {
-    if (0 != fsetpos(input_file, &file_start_pos))
-        fatal("Failed to seek input file.");
+    file_buffer_pos = file_start_pos;
     current_line = 1;
     current_address = file_start_address;
     current_char = file_first_char;
@@ -60,12 +61,8 @@ static void next_char(void) {
     //printf("last char %x\n",current_char);
     //printf("reading char...\n");
 
-    current_char = fgetc(input_file);
-    if (current_char == EOF) {
-        if (!feof(input_file)) {
-            fatal("Failed to read input file.");
-        }
-    }
+    current_char = file_buffer[file_buffer_pos];
+    file_buffer_pos++;
 
     //printf("read char %x\n",current_char);
 }
@@ -559,6 +556,18 @@ static void perform_pass_input(const char* input_filename) {
         fatal("Failed to open input file.");
     }
 
+    // read all
+    fseek(input_file, 0, SEEK_END);
+    long size = ftell(input_file);
+    fseek(input_file, 0, SEEK_SET);
+    file_buffer = malloc(size + 1);
+    fread(file_buffer, size, 1, input_file);
+
+    fclose(input_file);
+
+    file_buffer[size] = EOF;
+    file_buffer_pos = 0;    
+
     current_char = 0;
     next_char();
     save_file_state();
@@ -582,7 +591,8 @@ static void perform_pass_input(const char* input_filename) {
     }
 
     symbols_emit_generated();
-    fclose(input_file);
+
+    free(file_buffer);
 }
 
 void perform_pass(const char** input_filenames, size_t input_filenames_count) {

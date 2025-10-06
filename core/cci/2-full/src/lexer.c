@@ -50,11 +50,12 @@ static size_t lexer_buffer_capacity;
 static size_t lexer_buffer_length;
 #define LEXER_MINIMUM_CAPACITY 32
 
-static FILE* lexer_file;
-
 // This stores an intern version of current_filename from libo (so we don't
 // have to intern it again for each token.) They should always match.
 static string_t* lexer_filename;
+
+static char* file_buffer;
+static char* file_buffer_p;
 
 // TODO move to libo
 int hex_to_int(char c) {
@@ -115,7 +116,7 @@ static bool lexer_is_end_of_line(int c) {
 
 // Reads the next character, placing it in lexer_char and returning it.
 static int lexer_read_char(void) {
-    int c = fgetc(lexer_file);
+    int c = *file_buffer_p++;
     lexer_char = c;
     return c;
 }
@@ -124,11 +125,23 @@ static int lexer_read_char(void) {
  * Initializes the lexer, opening the given `.i` preprocessed C source file.
  */
 void lexer_setup(const char* filename) {
+    FILE* lexer_file;
     lexer_file = fopen(filename, "r");
     if (lexer_file == NULL) {
         fatal("Failed to open input file: %s", filename);
     }
 
+    // read all
+    fseek(lexer_file, 0, SEEK_END);
+    long size = ftell(lexer_file);
+    fseek(lexer_file, 0, SEEK_SET);
+    file_buffer = malloc(size + 1);
+    fread(file_buffer, size, 1, lexer_file);
+    fclose(lexer_file);
+
+    file_buffer[size] = EOF;
+    file_buffer_p = file_buffer;
+    
     lexer_filename = string_intern_cstr(filename);
     current_filename = (char*)string_cstr(lexer_filename);
     current_line = 1;
@@ -143,7 +156,7 @@ void lexer_setup(const char* filename) {
  * Destroys the lexer.
  */
 void lexer_teardown(void) {
-    fclose(lexer_file);
+    free(file_buffer);
     if (queued_token) {
         token_deref(queued_token);
     }
